@@ -1,5 +1,6 @@
 package com.example.Datadog.jwt;
 
+import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,18 +23,41 @@ public class JwtFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest req,
-                                    HttpServletResponse res,
-                                    FilterChain chain)
-            throws IOException, ServletException {
+    protected void doFilterInternal(
+            HttpServletRequest req,
+            HttpServletResponse res,
+            FilterChain chain
+    ) throws IOException, ServletException {
 
         String header = req.getHeader("Authorization");
 
-        if (header != null && header.startsWith("Bearer ")) {
-            String email = jwtUtil.extractEmail(header.substring(7));
-            UsernamePasswordAuthenticationToken auth =
-                    new UsernamePasswordAuthenticationToken(email, null, List.of());
-            SecurityContextHolder.getContext().setAuthentication(auth);
+        if (header == null || !header.startsWith("Bearer ")) {
+            chain.doFilter(req, res);
+            return;
+        }
+
+        String token = header.substring(7);
+
+        try {
+            String email = jwtUtil.extractEmail(token);
+
+            if (email != null &&
+                    SecurityContextHolder.getContext().getAuthentication() == null) {
+
+                UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(
+                                email,
+                                null,
+                                List.of()
+                        );
+
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            }
+
+        } catch (ExpiredJwtException e) {
+            // 🔥 MOST IMPORTANT FIX
+            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return; // stop filter chain
         }
 
         chain.doFilter(req, res);
